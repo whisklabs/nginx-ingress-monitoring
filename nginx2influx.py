@@ -7,12 +7,13 @@ import datetime
 from socket import gethostname
 import argparse
 import logging
-import glob
+import time
+
 from influxdb import InfluxDBClient
 
 
 # replace this with your nginx log format string
-nginx_log_format = '''$remote_addr [$time_local] "$request" $status $body_bytes_sent "$host" "$http_referer" "$http_user_agent" $request_time'''
+nginx_log_format = '''$remote_addr [$time_local] "$request" $status $request_length $bytes_sent "$host" "$http_referer" "$http_user_agent" $request_time'''
 
 
 metric_name = 'nginx_access'
@@ -34,6 +35,7 @@ nginx_spec_values = {
   '$request': '(((?P<request_method>\w+) (?P<request_uri>\S+) HTTP/(?P<http_version>\d+\.\d+))|-)',
   '$status': '((?P<status>\d{3})|-)',
   '$bytes_sent': '((?P<bytes_sent>\d+)|-)',
+  '$request_length': '((?P<request_length>\d+)|-)',
   '$http_referer': '((?P<http_referer>\S+)|-)?',
   '$http_user_agent': '(?P<user_agent>[\\\\A-Za-z0-9.();:+*&=?#^`$%~!@,/\-_\[\] \']+)',
   '$http_host': '((?P<http_host>\S+)|-)',
@@ -83,9 +85,11 @@ def parse_log(f, filename):
                 statuses[host] = {}
             status = parsed.group('status')
             if status not in statuses[host]:
-                statuses[host][status] = {'time': 0.0, 'count': 0}
+                statuses[host][status] = {'time': 0.0, 'count': 0, 'bytes_send': 0, 'bytes_received':  0}
             statuses[host][status]['time'] += float(parsed.group('request_time'))
             statuses[host][status]['count'] += 1
+            statuses[host][status]['bytes_send'] += int(parsed.group('bytes_sent'))
+            statuses[host][status]['bytes_received'] += int(parsed.group('request_length'))
             string_end_time[host] = parsed.group('time')
             #logger.debug(parsed.groupdict())
     for host in start_time.keys():
@@ -104,12 +108,14 @@ def print_result(statuses, timerange, nginx_host):
             else:
                 rps = 0
             rps = round(rps, 2)
+            bytes_send = statuses[status]['bytes_send']
+            bytes_send = statuses[status]['bytes_received']
             avg_time = statuses[status]['time']/statuses[status]['count']
             avg_time = round(avg_time,3)
             statuses[status]['rps'] = rps
             statuses[status]['avg_time'] = avg_time
-            print('{0},server={1},status={2},host={3} rps={4}'.format(metric_name, hostname, status, nginx_host, rps))
-            print('{0},server={1},status={2},host={3} avg_time={4}'.format(metric_name, hostname, status, nginx_host, avg_time))
+            #print('{0},server={1},status={2},host={3} rps={4}'.format(metric_name, hostname, status, nginx_host, rps))
+            #print('{0},server={1},status={2},host={3} avg_time={4}'.format(metric_name, hostname, status, nginx_host, avg_time))
             influx_point = [
                 {
                     "measurement": metric_name,
@@ -121,17 +127,23 @@ def print_result(statuses, timerange, nginx_host):
                     "time": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
                     "fields": {
                         "rps": rps,
-                        "avg_time": avg_time
+                        "avg_time": avg_time,
+                        "bytes_send": bytes_send,
+                        "bytes_received": bytes_received
                     }
                 }
             ]
-        client.write_points(influx_point)
+        try:
+            client.write_points(influx_point)
+        except Exception as e:
+            print(str(e))
+            sys.stdout.flush()
         logger.info(statuses)
 
 
 def parse_arg():
     parser = argparse.ArgumentParser(description='Process nginx log files and output result in influx format.')
-    parser.add_argument('files', type=str, help='log files to process', nargs='+')
+    parser.add_argument('file', type=str, help='log files to process')
     parser.add_argument('--loglevel', '-l', type=str, help='log level', default = 'warning')
     parser.add_argument('--influxhost', '-host', type=str, help='influxdb host')
     parser.add_argument('--influxport', '-P', type=str, help='influxdb port', default = 8086)
@@ -179,12 +191,13 @@ dbname = args.influxdb or os.getenv('INFLUX_DB')
 
 client = InfluxDBClient(host, port, user, password, dbname)
 
-files = args.files
-in_files = []
-for in_file in args.files:
-    for _in_file in glob.glob(in_file):
-        in_files.append(_in_file)
+in_file = args.file
+while True:
+    if os.path.isfile(in_file):
+        process_log(in_file)
+        time.sleep(15)
+    else:
+        print("file does not exists")
+        sys.stdout.flush()
+        time.sleep(60)
 
-
-for in_file in in_files:
-    process_log(in_file)
