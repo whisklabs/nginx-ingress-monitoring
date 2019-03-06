@@ -109,7 +109,7 @@ def print_result(statuses, timerange, nginx_host):
                 rps = 0
             rps = round(rps, 2)
             bytes_send = statuses[status]['bytes_send']
-            bytes_send = statuses[status]['bytes_received']
+            bytes_received = statuses[status]['bytes_received']
             avg_time = statuses[status]['time']/statuses[status]['count']
             avg_time = round(avg_time,3)
             statuses[status]['rps'] = rps
