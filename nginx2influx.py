@@ -102,6 +102,7 @@ def parse_log(f, filename):
         logger.info('unparsed lines: %s' ,unparsed_lines)
 
 def print_result(statuses, timerange, nginx_host):
+        influx_point = []
         for status in statuses.keys():
             if timerange > 0:
                 rps = statuses[status]['count']/float(timerange)
@@ -116,7 +117,7 @@ def print_result(statuses, timerange, nginx_host):
             statuses[status]['avg_time'] = avg_time
             #print('{0},server={1},status={2},host={3} rps={4}'.format(metric_name, hostname, status, nginx_host, rps))
             #print('{0},server={1},status={2},host={3} avg_time={4}'.format(metric_name, hostname, status, nginx_host, avg_time))
-            influx_point = [
+            influx_point.append(
                 {
                     "measurement": metric_name,
                     "tags": {
@@ -132,7 +133,7 @@ def print_result(statuses, timerange, nginx_host):
                         "bytes_received": bytes_received
                     }
                 }
-            ]
+            )
         try:
             client.write_points(influx_point)
         except Exception as e:
@@ -171,11 +172,8 @@ def process_log(in_file):
     logger.info('processing file: %s', in_file)
     with open(in_file) as f:
         parse_log(f, os.path.basename(in_file))
-    with open(in_file, 'w') as f:
-        f.truncate(0)
 
 args = parse_arg()
-
 init_logger()
 
 nginx_log_re = '^{}$'.format(convert_to_re(nginx_log_format))
@@ -194,8 +192,10 @@ client = InfluxDBClient(host, port, user, password, dbname)
 in_file = args.file
 while True:
     if os.path.isfile(in_file):
-        process_log(in_file)
+        with open(in_file, 'w') as f:
+            f.truncate(0)
         time.sleep(15)
+        process_log(in_file)
     else:
         print("file does not exists")
         sys.stdout.flush()
