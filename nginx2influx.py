@@ -152,7 +152,7 @@ def parse_arg():
     parser.add_argument('--influxuser', '-u', type=str, help='influxdb user', default = None)
     parser.add_argument('--influxpass', '-p', type=str, help='influxdb password', default = None)
     parser.add_argument('--influxdb', '-d', type=str, help='influxdb database', default = 'nginx')
-    parser.add_argument('--dcname', '-D', type=str, help='current DC', default = 'unknown')
+    parser.add_argument('--dcname', '-D', type=str, help='current DC', default = None)
 
     args = parser.parse_args()
     return args
