@@ -123,7 +123,8 @@ def print_result(statuses, timerange, nginx_host):
                     "tags": {
                         "status": status,
                         "instance": hostname,
-                        "host": nginx_host
+                        "host": nginx_host,
+                        "dc":  dcname
                     },
                     "time": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
                     "fields": {
@@ -151,6 +152,7 @@ def parse_arg():
     parser.add_argument('--influxuser', '-u', type=str, help='influxdb user', default = None)
     parser.add_argument('--influxpass', '-p', type=str, help='influxdb password', default = None)
     parser.add_argument('--influxdb', '-d', type=str, help='influxdb database', default = 'nginx')
+    parser.add_argument('--dcname', '-D', type=str, help='current DC', default = 'unknown')
 
     args = parser.parse_args()
     return args
@@ -186,6 +188,7 @@ port = args.influxport or os.getenv('INFLUX_PORT')
 user = args.influxuser or os.getenv('INFLUX_USER')
 password = args.influxpass or os.getenv('INFLUX_PASSWORD')
 dbname = args.influxdb or os.getenv('INFLUX_DB')
+dcname = args.dcname or os.getenv('DC')
 
 client = InfluxDBClient(host, port, user, password, dbname)
 
