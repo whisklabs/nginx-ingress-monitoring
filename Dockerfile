@@ -3,7 +3,7 @@ MAINTAINER Dmitry Muzyka
 
 RUN apt-get update && \
     apt-get install -y python python-idna python-six python-pip && \
-    pip install influxdb && \
+    pip install influxdb numpy && \
     apt-get remove python-pip -y && \
     apt-get autoremove -y && \
     apt-get clean -y && \

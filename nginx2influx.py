@@ -8,6 +8,7 @@ from socket import gethostname
 import argparse
 import logging
 import time
+import numpy as np
 
 from influxdb import InfluxDBClient
 
@@ -86,7 +87,9 @@ def parse_log(f, filename):
             status = parsed.group('status')
             if status not in statuses[host]:
                 statuses[host][status] = {'time': 0.0, 'count': 0, 'bytes_send': 0, 'bytes_received':  0}
+                statuses[host][status]['times'] = []
             statuses[host][status]['time'] += float(parsed.group('request_time'))
+            statuses[host][status]['times'].append(float(parsed.group('request_time')))
             statuses[host][status]['count'] += 1
             statuses[host][status]['bytes_send'] += int(parsed.group('bytes_sent'))
             statuses[host][status]['bytes_received'] += int(parsed.group('request_length'))
@@ -113,6 +116,13 @@ def print_result(statuses, timerange, nginx_host):
             bytes_received = statuses[status]['bytes_received']
             avg_time = statuses[status]['time']/statuses[status]['count']
             avg_time = round(avg_time,3)
+            times = np.array(statuses[status]['times'])
+            median = np.percentile(times, 50)
+            pt85 = np.percentile(times, 85)
+            pt90 = np.percentile(times, 90)
+            pt95 = np.percentile(times, 95)
+            pt99 = np.percentile(times, 99)
+
             statuses[status]['rps'] = rps
             statuses[status]['avg_time'] = avg_time
             #print('{0},server={1},status={2},host={3} rps={4}'.format(metric_name, hostname, status, nginx_host, rps))
@@ -131,7 +141,13 @@ def print_result(statuses, timerange, nginx_host):
                         "rps": rps,
                         "avg_time": avg_time,
                         "bytes_send": bytes_send,
-                        "bytes_received": bytes_received
+                        "bytes_received": bytes_received,
+                        "median": round(median,3),
+                        "pt85": round(pt85,3),
+                        "pt90": round(pt90,3),
+                        "pt95": round(pt95,3),
+                        "pt99": round(pt99,3),
+
                     }
                 }
             )
