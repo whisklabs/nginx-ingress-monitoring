@@ -67,6 +67,7 @@ def parse_log(f, filename):
     request_time = 0.0
     n_requests = 0
     statuses = {}
+    times = {}
     unparsed_lines = 0
     start_time = {}
     string_end_time = {}
@@ -84,25 +85,28 @@ def parse_log(f, filename):
             if host not in start_time:
                 start_time[host] = datetime.datetime.strptime(parsed.group('time'), nginx_time_format)
                 statuses[host] = {}
+                times[host] = []
             status = parsed.group('status')
             if status not in statuses[host]:
-                statuses[host][status] = {'times': [], 'count': 0, 'bytes_send': 0, 'bytes_received':  0}
-            statuses[host][status]['times'].append(float(parsed.group('request_time')))
+                statuses[host][status] = {'time': 0.0, 'count': 0, 'bytes_send': 0, 'bytes_received':  0}
+            statuses[host][status]['time'] += float(parsed.group('request_time'))
+            times[host].append(float(parsed.group('request_time')))
             statuses[host][status]['count'] += 1
             statuses[host][status]['bytes_send'] += int(parsed.group('bytes_sent'))
             statuses[host][status]['bytes_received'] += int(parsed.group('request_length'))
             string_end_time[host] = parsed.group('time')
             #logger.debug(parsed.groupdict())
+
     for host in start_time.keys():
         end_time[host] = datetime.datetime.strptime(string_end_time[host], nginx_time_format)
         logger.info('start time for server %s in log: %s', host, start_time)
         logger.info('finish time for host %s in log: %s', host, end_time)
         processed_time[host] = end_time[host] - start_time[host]
         timerange = processed_time[host].seconds
-        print_result(statuses[host], timerange, host)
+        print_result(statuses[host], timerange, host, times[host])
         logger.info('unparsed lines: %s' ,unparsed_lines)
 
-def print_result(statuses, timerange, nginx_host):
+def print_result(statuses, timerange, nginx_host, times):
         influx_point = []
         for status in statuses.keys():
             if timerange > 0:
@@ -112,15 +116,7 @@ def print_result(statuses, timerange, nginx_host):
             rps = round(rps, 2)
             bytes_send = statuses[status]['bytes_send']
             bytes_received = statuses[status]['bytes_received']
-            times = np.array(statuses[status]['times'])
-            avg_time = np.average(times)
-            median = np.percentile(times, 50)
-            pt85 = np.percentile(times, 85)
-            pt90 = np.percentile(times, 90)
-            pt95 = np.percentile(times, 95)
-            pt99 = np.percentile(times, 99)
-            del statuses[status]['times']
-            del times
+            avg_time = statuses[status]['time']/statuses[status]['count']
             #print('{0},server={1},status={2},host={3} rps={4}'.format(metric_name, hostname, status, nginx_host, rps))
             #print('{0},server={1},status={2},host={3} avg_time={4}'.format(metric_name, hostname, status, nginx_host, avg_time))
             influx_point.append(
@@ -135,18 +131,37 @@ def print_result(statuses, timerange, nginx_host):
                     "time": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
                     "fields": {
                         "rps": rps,
-                        "avg_time": round(avg_time,3),
+                        "avg_time": round(avg_time, 3),
                         "bytes_send": bytes_send,
                         "bytes_received": bytes_received,
-                        "median": round(median,3),
-                        "pt85": round(pt85,3),
-                        "pt90": round(pt90,3),
-                        "pt95": round(pt95,3),
-                        "pt99": round(pt99,3),
-
                     }
                 }
             )
+        nptimes = np.array(times)
+        median = np.percentile(nptimes, 50)
+        pt85 = np.percentile(nptimes, 85)
+        pt90 = np.percentile(nptimes, 90)
+        pt95 = np.percentile(nptimes, 95)
+        pt99 = np.percentile(nptimes, 99)
+        influx_point.append(
+            {
+                "measurement": metric_name,
+                "tags": {
+                    "instance": hostname,
+                    "host": nginx_host,
+                    "dc":  dcname
+                },
+                "time": datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+                "fields": {
+                    "median": round(median, 3),
+                    "pt85": round(pt85, 3),
+                    "pt90": round(pt90, 3),
+                    "pt95": round(pt95, 3),
+                    "pt99": round(pt99, 3),
+
+                }
+            }
+        )
         try:
             client.write_points(influx_point)
         except Exception as e:
